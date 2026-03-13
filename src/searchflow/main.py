@@ -3,7 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 from dotenv import load_dotenv
 
-# Load env
+from .api.documents import router as documents_router
+from .database.connection import engine
+from .database.models import Base
+
 load_dotenv()
 
 app = FastAPI(
@@ -12,7 +15,6 @@ app = FastAPI(
     version="0.1.0"
 )
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000").split(","),
@@ -20,6 +22,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(documents_router)
+
+Base.metadata.create_all(bind=engine)
 
 @app.get("/")
 async def root():
@@ -31,4 +37,4 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000) 

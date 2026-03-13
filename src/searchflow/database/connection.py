@@ -4,7 +4,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 # Get database URL from environemnt
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://searchflow:password@localhost:5432/searchflow")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://searchflow:password@localhost:5433/searchflow")
 
 # Create engine
 engine = create_engine(DATABASE_URL)
