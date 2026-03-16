@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 from dotenv import load_dotenv
 
+from .api.crawler import router as crawler_router
 from .api.documents import router as documents_router
 from .database.connection import engine
 from .database.models import Base
@@ -24,6 +25,7 @@ app.add_middleware(
 )
 
 app.include_router(documents_router)
+app.include_router(crawler_router)
 
 Base.metadata.create_all(bind=engine)
 
