@@ -10,6 +10,7 @@ class InvertedIndex:
         self.index = defaultdict(set)
         self.doc_count = 0
         self.doc_lengths = {}
+        self.term_frequencies = {}
         
     def build_index(self):
         """Build inverted index from database documents"""
@@ -22,6 +23,7 @@ class InvertedIndex:
                 doc_id = doc.id
                 words = self._tokenize(doc.content)
                 word_counts = Counter(words)
+                self.term_frequencies[doc_id] = dict(word_counts)
                 
                 for word in word_counts:
                     self.index[word].add(doc_id)
@@ -71,7 +73,8 @@ class InvertedIndex:
         
         for word in query_words:
             # Term Frequency (TF)
-            tf = 1.0 / doc_length
+            tf_count = self.term_frequencies.get(doc_id, {}).get(word, 0)
+            tf = tf_count / doc_length
             
             # Inverse Document (IDF)
             df = len(self.index[word])
