@@ -44,22 +44,16 @@ class InvertedIndex:
         if not query_words:
             return []
         
-        result_docs = None
+        candidate_docs = set()
         for word in query_words:
             if word in self.index:
-                docs_with_word = self.index[word]
-                if result_docs is None:
-                    result_docs = docs_with_word
-                else:
-                    result_docs &= docs_with_word
-            else:
-                return []
+                candidate_docs.update(self.index[word])
         
-        if not result_docs:
+        if not candidate_docs:
             return []
         
         scores = []
-        for doc_id in result_docs:
+        for doc_id in candidate_docs:
             score = self._calculate_tf_idf(query_words, doc_id)
             scores.append((doc_id, score))
             

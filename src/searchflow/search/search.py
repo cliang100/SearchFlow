@@ -22,24 +22,31 @@ class SearchEngine:
     def search(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
         """Search query and return formatted results"""
         scored_docs = self.index.search(query)
+        if not scored_docs:
+            return []
         
-        results = []
+        top_docs = scored_docs[:limit]
+        doc_ids = [doc_id for doc_id, _ in top_docs]
+        score_map = {doc_id: score for doc_id, score in top_docs}
+        
         db = SessionLocal()
         try:
-            for doc_id, score in scored_docs[:limit]:
-                doc = db.query(Document).filter(Document.id == doc_id).first()
-                if doc:
-                    results.append({
-                        'id': doc.id,
-                        'title': doc.title,
-                        'url': doc.url,
-                        'content': doc.content[:200] + '...',
-                        'score': round(score, 4)
-                    })
+            documents = db.query(Document).filter(Document.id.in_(doc_ids)).all()
+            doc_map = {doc.id: doc for doc in documents}
+            
+            return [
+                {
+                    'id': doc.id,
+                    'title': doc.title,
+                    'url': doc.url,
+                    'content': doc.content[:200] + '...',
+                    'score': round(score_map[doc.id], 4)
+                }
+                for doc_id in doc_ids
+                if (doc := doc_map.get(doc_id))
+            ]
         finally:
             db.close()
-            
-        return results
     
     def autocomplete(self, prefix: str) -> List[str]:
         """Get autocomplete suggestions"""

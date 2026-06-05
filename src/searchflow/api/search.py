@@ -53,3 +53,10 @@ async def autocomplete_suggestions(
     suggestions = engine.autocomplete(q)
     
     return AutocompleteResponse(suggestions=suggestions[:limit])
+
+@router.post("/rebuild-index")
+async def rebuild_index():
+    """Rebuild the search index from the current database contents"""
+    global search_engine
+    search_engine = SearchEngine()
+    return {"message": f"Index rebuilt with {search_engine.index.doc_count} documents"}
