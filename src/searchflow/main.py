@@ -1,4 +1,6 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
 from dotenv import load_dotenv
@@ -28,6 +30,11 @@ app.add_middleware(
 app.include_router(documents_router)
 app.include_router(crawler_router)
 app.include_router(search_router)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/ui")
+async def serve_ui():
+    return FileResponse("static/index.html")
 
 Base.metadata.create_all(bind=engine)
 
