@@ -3,6 +3,8 @@ from pydantic import BaseModel, HttpUrl
 from typing import Optional
 
 from ..crawler.manager import CrawlerManager
+from ..search.search import SearchEngine
+from . import search as search_module
 
 router = APIRouter(prefix="/crawler", tags=["crawler"])
 
@@ -74,6 +76,7 @@ async def run_crawl_background(crawler: CrawlerManager, start_url: str):
     """Run crawl in background task"""
     try:
         await crawler.start_crawl(start_url)
+        search_module.search_engine = SearchEngine()
     finally:
         # Clean up
         if start_url in active_crawlers:

@@ -19,6 +19,7 @@ class CrawlerManager:
     async def start_crawl(self, start_url: str):
         """Start crawling from a seed URL"""
         # Add seed URL to queue
+        self.queue.clear()
         self.queue.add_url(start_url, depth=1)
         
         crawled_count = 0
@@ -72,7 +73,7 @@ class CrawlerManager:
         db = SessionLocal()
         try:
             content_hash = hashlib.sha256(extracted.content.encode()).hexdigest()
-            existing = db.query(Document).filter(Document.content_hash == content_hash).first()
+            existing = db.query(Document).filter(Document.url == url).first()
             
             if existing:
                 return

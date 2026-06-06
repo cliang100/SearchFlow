@@ -69,3 +69,8 @@ class CrawlQueue:
     def get_completed_count(self) -> int:
         """Get number of completed URLs"""
         return self.redis_client.scard(self.completed_name)
+    
+    def clear(self):
+        self.redis_client.delete(self.queue_name)
+        self.redis_client.delete(self.processing_name)
+        self.redis_client.delete(self.completed_name)
