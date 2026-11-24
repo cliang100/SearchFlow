@@ -3,7 +3,7 @@ annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.12.1
 beautifulsoup4==4.14.3
-certifi==2026.2.25
+certifi==2026.10.18
 click==8.3.1
 fastapi==0.135.1
 greenlet==3.3.2
