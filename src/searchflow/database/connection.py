@@ -1,21 +1,13 @@
-import os
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-# Get database URL from environemnt
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://searchflow:password@localhost:5433/searchflow")
+from .. import config
 
-# Create engine
-engine = create_engine(DATABASE_URL)
-
-# Create session factory
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Create base class for models
+engine = create_engine(config.DATABASE_URL, pool_pre_ping=True)
+SessionLocal = sessionmaker(autoflush=False, bind=engine)
 Base = declarative_base()
 
-# Dependency to get DB session
+
 def get_db():
     db = SessionLocal()
     try:
