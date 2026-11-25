@@ -29,6 +29,7 @@ async function doSearch(query) {
 
     try {
     const res = await fetch(`${API}/search/?q=${encodeURIComponent(query)}&limit=20`);
+    if (!res.ok) throw new Error(`search returned ${res.status}`);
     const data = await res.json();
     const elapsed = ((performance.now() - t0) / 1000).toFixed(3);
 
@@ -40,14 +41,7 @@ async function doSearch(query) {
     }
 
     metaEl.textContent = `${data.length} result${data.length !== 1 ? 's' : ''} (${elapsed}s)`;
-    resultsList.innerHTML = data.map(r => `
-        <div class="result">
-        <a class="result-title" href="${r.url}" target="_blank" rel="noopener">${escHtml(r.title || r.url)}</a>
-        <div class="result-url">${escHtml(r.url)}</div>
-        <div class="result-snippet">${escHtml(r.content)}</div>
-        <div class="result-score">score: ${r.score}</div>
-        </div>
-    `).join('');
+    resultsList.replaceChildren(...data.map(renderResult));
     } catch (e) {
     metaEl.textContent = '';
     statusEl.textContent = 'search failed — is the API running?';
@@ -63,9 +57,11 @@ async function doAutocomplete(prefix) {
     const suggestions = data.suggestions || [];
     if (!suggestions.length) { hideAutocomplete(); return; }
     acIndex = -1;
-    autocompleteEl.innerHTML = suggestions
-        .map(s => `<div class="suggestion">${escHtml(s)}</div>`)
-        .join('');
+    autocompleteEl.replaceChildren(...suggestions.map(s => {
+        const option = el('div', 'suggestion', s);
+        option.setAttribute('role', 'option');
+        return option;
+    }));
     autocompleteEl.classList.add('visible');
     autocompleteEl.querySelectorAll('.suggestion').forEach(el => {
         el.addEventListener('mousedown', e => {
@@ -78,17 +74,34 @@ async function doAutocomplete(prefix) {
     } catch (_) { hideAutocomplete(); }
 }
 
+function el(tag, className, text) {
+    const node = document.createElement(tag);
+    node.className = className;
+    node.textContent = text;
+    return node;
+}
+
+function renderResult(r) {
+    const result = el('div', 'result', '');
+    const title = el('a', 'result-title', r.title);
+    // only link to web pages, never javascript: or data: URLs
+    if (/^https?:\/\//i.test(r.url)) {
+        title.href = r.url;
+        title.target = '_blank';
+        title.rel = 'noopener noreferrer';
+    }
+    result.append(
+        title,
+        el('div', 'result-url', r.url),
+        el('div', 'result-snippet', r.content),
+        el('div', 'result-score', `score: ${r.score}`),
+    );
+    return result;
+}
+
 function hideAutocomplete() {
     autocompleteEl.classList.remove('visible');
     acIndex = -1;
-}
-
-function escHtml(str) {
-    return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
 input.addEventListener('input', () => {
@@ -126,35 +139,56 @@ document.addEventListener('click', e => {
     if (!e.target.closest('.search-wrap')) hideAutocomplete();
 });
 
+// Admin calls need the server's ADMIN_TOKEN. It is kept for this tab only.
+function adminToken() {
+    let token = sessionStorage.getItem('searchflow_admin_token');
+    if (!token) {
+        token = prompt('Admin token:');
+        if (token) sessionStorage.setItem('searchflow_admin_token', token);
+    }
+    return token;
+}
+
+async function adminFetch(path, body) {
+    const token = adminToken();
+    if (!token) return null;
+    const res = await fetch(`${API}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+        body: body ? JSON.stringify(body) : undefined,
+    });
+    if (res.status === 401) sessionStorage.removeItem('searchflow_admin_token');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        const detail = Array.isArray(data.detail) ? data.detail[0].msg : data.detail;
+        throw new Error(detail || `request failed (${res.status})`);
+    }
+    return data;
+}
+
 document.getElementById('rebuild-btn').addEventListener('click', async () => {
     const btn = document.getElementById('rebuild-btn');
     btn.disabled = true;
     btn.textContent = 'rebuilding...';
     try {
-    const res = await fetch(`${API}/search/rebuild-index`, { method: 'POST' });
-    const data = await res.json();
-    showToast(data.message);
-    } catch (_) {
-    showToast('rebuild failed');
+        const data = await adminFetch('/search/rebuild-index');
+        if (data) showToast(data.message);
+    } catch (e) {
+        showToast(e.message);
     } finally {
-    btn.disabled = false;
-    btn.textContent = 'rebuild index';
+        btn.disabled = false;
+        btn.textContent = 'rebuild index';
     }
 });
 
 document.getElementById('crawl-btn').addEventListener('click', async () => {
     const url = prompt('URL to crawl:');
     if (!url) return;
-    const maxPages = prompt('Max pages (default 20):', '20');
+    const maxPages = parseInt(prompt('Max pages (1-200):', '20'), 10) || 20;
     try {
-    const res = await fetch(`${API}/crawler/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ start_url: url, max_pages: parseInt(maxPages) || 20 })
-    });
-    const data = await res.json();
-    showToast(data.message || 'crawl started');
-    } catch (_) {
-    showToast('crawl failed');
+        const data = await adminFetch('/crawler/start', { start_url: url, max_pages: maxPages });
+        if (data) showToast(data.message);
+    } catch (e) {
+        showToast(e.message);
     }
 });

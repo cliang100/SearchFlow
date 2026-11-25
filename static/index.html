@@ -13,13 +13,15 @@
     <div class="search-wrap">
       <input
         id="search-input"
+        aria-label="Search"
+        maxlength="200"
         type="text"
         placeholder="search the index..."
         autocomplete="off"
         spellcheck="false"
       />
       <button class="search-btn" id="search-btn" aria-label="Search">⏎</button>
-      <div id="autocomplete"></div>
+      <div id="autocomplete" role="listbox"></div>
     </div>
   </div>
 
@@ -34,7 +36,7 @@
     <button class="admin-btn" id="crawl-btn">crawl url</button>
   </div>
 
-  <div id="toast"></div>
+  <div id="toast" role="status"></div>
 
   <script src="/static/js/main.js"></script>
 </body>
