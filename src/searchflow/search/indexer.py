@@ -1,9 +1,15 @@
 import math
 import re
-from collections import defaultdict, Counter
-from typing import Dict, List, Set, Tuple
-from ..database.connection import SessionLocal
-from ..database.models import Document
+from collections import Counter, defaultdict
+from typing import Iterable, List, Tuple
+
+TOKEN = re.compile(r"[a-z]+")
+
+
+def tokenize(text: str) -> List[str]:
+    # shortcut: ASCII letters only, so accented words and numbers are not searchable
+    return TOKEN.findall((text or "").lower())
+
 
 class InvertedIndex:
     def __init__(self):
@@ -11,69 +17,37 @@ class InvertedIndex:
         self.doc_count = 0
         self.doc_lengths = {}
         self.term_frequencies = {}
-        
-    def build_index(self):
-        """Build inverted index from database documents"""
-        db = SessionLocal()
-        try:
-            documents = db.query(Document).all()
-            self.doc_count = len(documents)
-            
-            for doc in documents:
-                doc_id = doc.id
-                words = self._tokenize(doc.content)
-                word_counts = Counter(words)
-                self.term_frequencies[doc_id] = dict(word_counts)
-                
-                for word in word_counts:
-                    self.index[word].add(doc_id)
-                
-                self.doc_lengths[doc_id] = len(words)
-        
-        finally:
-            db.close()
-            
-    def _tokenize(self, text: str) -> List[str]:
-        """Tokenize text into words"""
-        words = re.findall(r'\b[a-zA-Z]+\b', text.lower())
-        return words
+
+    def build(self, documents: Iterable[Tuple[int, str]]):
+        """Index (id, text) pairs."""
+        for doc_id, text in documents:
+            words = tokenize(text)
+            counts = Counter(words)
+            self.term_frequencies[doc_id] = counts
+            self.doc_lengths[doc_id] = len(words)
+            for word in counts:
+                self.index[word].add(doc_id)
+        self.doc_count = len(self.doc_lengths)
+
+    def document_frequency(self, word: str) -> int:
+        return len(self.index.get(word, ()))
 
     def search(self, query: str) -> List[Tuple[int, float]]:
-        """Search query and return ranked documents"""
-        query_words = self._tokenize(query)
-        if not query_words:
-            return []
-        
-        candidate_docs = set()
+        """Return (doc id, score) for documents containing any query word, best first."""
+        query_words = tokenize(query)
+        candidates = set()
         for word in query_words:
-            if word in self.index:
-                candidate_docs.update(self.index[word])
-        
-        if not candidate_docs:
-            return []
-        
-        scores = []
-        for doc_id in candidate_docs:
-            score = self._calculate_tf_idf(query_words, doc_id)
-            scores.append((doc_id, score))
-            
-        scores.sort(key=lambda x: x[1], reverse=True)
+            candidates |= self.index.get(word, set())
+        scores = [(doc_id, self._tf_idf(query_words, doc_id)) for doc_id in candidates]
+        scores.sort(key=lambda item: (-item[1], item[0]))
         return scores
-    
-    def _calculate_tf_idf(self, query_words: List[str], doc_id: int) -> float:
-        """Calculate TF-IDF score for document"""
-        score = 0.0
-        doc_length = self.doc_lengths[doc_id]
-        
-        for word in query_words:
-            # Term Frequency (TF)
-            tf_count = self.term_frequencies.get(doc_id, {}).get(word, 0)
-            tf = tf_count / doc_length
-            
-            # Inverse Document (IDF)
-            df = len(self.index[word])
-            idf = math.log(self.doc_count / df)
 
-            score += tf * idf
-        
+    def _tf_idf(self, query_words: List[str], doc_id: int) -> float:
+        score = 0.0
+        for word in query_words:
+            df = self.document_frequency(word)
+            if df == 0:
+                continue
+            tf = self.term_frequencies[doc_id][word] / self.doc_lengths[doc_id]
+            score += tf * math.log(self.doc_count / df)
         return score
