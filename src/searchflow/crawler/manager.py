@@ -1,101 +1,91 @@
 import asyncio
-from typing import List, Optional
-from urllib.parse import urljoin, urlparse
+import hashlib
+import logging
+from urllib.parse import urlsplit
+from urllib.robotparser import RobotFileParser
 
-from .models import FetchResult, ExtractedContent
-from .scraper import AsyncWebScraper
-from .queue import CrawlQueue
 from ..database.connection import SessionLocal
 from ..database.models import Document
-import hashlib
+from .queue import CrawlQueue
+from .safety import normalize
+from .scraper import USER_AGENT, AsyncWebScraper
+
+log = logging.getLogger(__name__)
+
 
 class CrawlerManager:
-    def __init__(self, max_depth: int = 3, max_pages: int = 1000):
+    def __init__(self, queue: CrawlQueue, scraper: AsyncWebScraper, max_depth: int, max_pages: int):
+        self.queue = queue
+        self.scraper = scraper
         self.max_depth = max_depth
         self.max_pages = max_pages
-        self.queue = CrawlQueue()
-        self.scraper = AsyncWebScraper(delay=1.0)
-        
-    async def start_crawl(self, start_url: str):
-        """Start crawling from a seed URL"""
-        # Add seed URL to queue
-        self.queue.clear()
-        self.queue.add_url(start_url, depth=1)
-        
-        crawled_count = 0
-        
-        while crawled_count < self.max_pages:
-            # Get next job from queue
-            job = self.queue.get_next_job()
-            if not job:
-                print("No more jobs in queue")
-                break
-            
-            # Process the job
-            success = await self._process_job(job)
-            if success:
-                crawled_count += 1
-                print(f"Crawled {crawled_count}/{self.max_pages}: {job['url']}")
-            else:
-                self.queue.mark_failed(job['url'])
-        
-        print(f"Crawling complete! Processed {crawled_count} pages")
-    
-    async def _process_job(self, job: dict) -> bool:
-        """Process a single crawl job"""
-        url = job['url']
-        depth = job['depth']
-        
-        try:
-            async with self.scraper:
-                fetch_result = await self.scraper.fetch_page(url)
-                if not fetch_result.success:
-                    print(f"Failed to fetch {url}: {fetch_result.error}")
-                    return False
-            
-            extracted = self.scraper.extract_content(fetch_result.html, fetch_result.final_url)
-            if not extracted.success:
-                print(f"Failed to extract content from {fetch_result.final_url}: {extracted.error}")
-                return False
-            
-            await self._save_document(fetch_result.final_url, extracted, depth)
-            
-            if depth < self.max_depth:
-                await self._add_links_to_queue(extracted.links, depth + 1, fetch_result.final_url)
-            
-            return True
-        except Exception as e:
-            print(f"Error processing job {url}: {e}")
+        self.robots = {}
+
+    async def start_crawl(self, start_url: str) -> int:
+        start_url = normalize(start_url)
+        self.host = urlsplit(start_url).netloc
+        await self.queue.clear()
+        await self.queue.add_url(start_url, depth=1)
+
+        crawled = 0
+        async with self.scraper:
+            while crawled < self.max_pages:
+                job = await self.queue.next_job()
+                if job is None:
+                    break
+                if await self._process(job["url"], job["depth"]):
+                    crawled += 1
+                    await self.queue.mark_done()
+        log.info("Crawl of %s finished: %d pages", start_url, crawled)
+        return crawled
+
+    async def _process(self, url: str, depth: int) -> bool:
+        if not await self._robots_allow(url):
+            log.info("robots.txt disallows %s", url)
             return False
-    
-    async def _save_document(self, url: str, extracted: ExtractedContent, depth: int):
-        """Save extracted content to database"""
-        db = SessionLocal()
-        try:
-            content_hash = hashlib.sha256(extracted.content.encode()).hexdigest()
-            existing = db.query(Document).filter(Document.url == url).first()
-            
-            if existing:
-                return
-            
-            document = Document(
-                url=url,
-                title=extracted.title,
-                content=extracted.content,
-                content_hash=content_hash,
-                crawl_depth=depth,
-                word_count=extracted.word_count
-            )
-            db.add(document)
-            db.commit()
-        except Exception as e:
-            print(f"Error saving document {url}: {e}")
-            db.rollback()
-        finally:
-            db.close()
-    async def _add_links_to_queue(self, links: List[str], depth: int, parent_url: str):
-        """Add new links to crawl queue"""
-        for link in links:
-            # Only add same domain links
-            if urlparse(link).netloc == urlparse(parent_url).netloc:
-                self.queue.add_url(link, depth=depth, parent_url=parent_url)
+        page = await self.scraper.fetch(url)
+        if not page.success:
+            log.info("Skipped %s: %s", url, page.error)
+            return False
+        await self.queue.mark_seen(page.final_url)
+
+        extracted = self.scraper.extract_content(page.html, page.final_url)
+        if not extracted.success:
+            return False
+        await asyncio.to_thread(save_document, page.final_url, extracted.title, extracted.content, depth)
+
+        if depth < self.max_depth:
+            for link in extracted.links:
+                if urlsplit(link).netloc == self.host:
+                    await self.queue.add_url(link, depth + 1)
+        return True
+
+    async def _robots_allow(self, url: str) -> bool:
+        parts = urlsplit(url)
+        origin = f"{parts.scheme}://{parts.netloc}"
+        if origin not in self.robots:
+            parser = RobotFileParser()
+            result = await self.scraper.fetch(origin + "/robots.txt", html_only=False)
+            # a missing robots.txt allows everything
+            parser.parse(result.html.splitlines() if result.success else [])
+            self.robots[origin] = parser
+        return self.robots[origin].can_fetch(USER_AGENT, url)
+
+
+def save_document(url: str, title: str, content: str, depth: int) -> bool:
+    """Store a page unless its URL or exact content is already indexed."""
+    content_hash = hashlib.sha256(content.encode()).hexdigest()
+    with SessionLocal() as db:
+        exists = db.query(Document.id).filter((Document.url == url) | (Document.content_hash == content_hash)).first()
+        if exists:
+            return False
+        db.add(Document(
+            url=url[:2048],
+            title=title[:500],
+            content=content,
+            content_hash=content_hash,
+            crawl_depth=depth,
+            word_count=len(content.split()),
+        ))
+        db.commit()
+        return True

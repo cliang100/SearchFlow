@@ -25,7 +25,7 @@ def test_health():
 
 def test_writes_disabled_without_admin_token():
     for method, path in [("post", "/documents/"), ("put", "/documents/1"), ("delete", "/documents/1"),
-                         ("post", "/search/rebuild-index")]:
+                         ("post", "/search/rebuild-index"), ("post", "/crawler/start")]:
         res = client.request(method.upper(), path, headers=ADMIN, json={})
         assert res.status_code == 403, (path, res.status_code)
 
@@ -72,6 +72,18 @@ def test_input_validation(admin):
     assert client.get("/search/", params={"q": "x" * 201}).status_code == 422
     assert client.get("/documents/", params={"limit": 101}).status_code == 422
     assert client.post("/documents/", json={"url": "javascript:alert(1)"}, headers=ADMIN).status_code == 422
+
+
+@pytest.mark.parametrize("body,status", [
+    ({"start_url": "https://example.com", "max_pages": 1000}, 422),
+    ({"start_url": "https://example.com", "max_depth": 9}, 422),
+    ({"start_url": "ftp://example.com"}, 422),
+    ({"start_url": "http://127.0.0.1:8000"}, 400),
+    ({"start_url": "http://169.254.169.254/latest/meta-data/"}, 400),
+    ({"start_url": "http://10.0.0.5"}, 400),
+])
+def test_crawl_request_validation(admin, body, status):
+    assert client.post("/crawler/start", json=body, headers=ADMIN).status_code == status
 
 
 def test_ui_has_security_headers():
