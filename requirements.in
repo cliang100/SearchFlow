@@ -2,7 +2,7 @@ alembic
 beautifulsoup4
 fastapi
 httpx
-psycopg2-binary
+psycopg[binary]
 python-dotenv
 redis
 SQLAlchemy

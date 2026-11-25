@@ -37,8 +37,10 @@ markupsafe==3.0.4
     # via mako
 opentelemetry-api==1.45.2
     # via fastapi
-psycopg2-binary==2.9.13
+psycopg==3.3.9
     # via -r requirements.in
+psycopg-binary==3.3.9
+    # via psycopg
 pydantic==2.14.4
     # via fastapi
 pydantic-core==2.50.5
@@ -62,6 +64,7 @@ typing-extensions==4.16.0
     #   beautifulsoup4
     #   fastapi
     #   opentelemetry-api
+    #   psycopg
     #   pydantic
     #   pydantic-core
     #   sqlalchemy
