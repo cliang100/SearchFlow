@@ -1,4 +1,19 @@
 services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://searchflow:password@postgres:5432/searchflow
+      REDIS_URL: redis://redis:6379
+      # Change this, or remove it to make the API read-only.
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-change-me}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
   postgres:
     image: postgres:15
     environment:
@@ -9,7 +24,11 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-  
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U searchflow"]
+      interval: 2s
+      retries: 15
+
   redis:
     image: redis:7
     ports:

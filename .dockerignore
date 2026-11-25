@@ -1,0 +1,9 @@
+.git
+.github
+.env
+venv/
+__pycache__/
+tests/
+*.md
+netlify.toml
+scripts/
